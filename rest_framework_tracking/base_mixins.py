@@ -22,8 +22,7 @@ class BaseLoggingMixin(object):
         super(BaseLoggingMixin, self).__init__(*args, **kwargs)
 
     def initial(self, request, *args, **kwargs):
-        self.log = {}
-        self.log['requested_at'] = now()
+        self.log = {'requested_at': now()}
         self.log['data'] = self._clean_data(request.body)
 
         super(BaseLoggingMixin, self).initial(request, *args, **kwargs)
@@ -78,15 +77,16 @@ class BaseLoggingMixin(object):
             if self._clean_data(request.query_params.dict()) == {}:
                 self.log.update({'query_params': self.log['data']})
             try:
-                if not connection.settings_dict.get('ATOMIC_REQUESTS'):
-                    self.handle_log()
-                else:
-                    if getattr(response, 'exception', None) and connection.in_atomic_block:
-                        # response with exception (HTTP status like: 401, 404, etc)
-                        # pointwise disable atomic block for handle log (TransactionManagementError)
-                        connection.set_rollback(True)
-                        connection.set_rollback(False)
-                    self.handle_log()
+                if (
+                    connection.settings_dict.get('ATOMIC_REQUESTS')
+                    and getattr(response, 'exception', None)
+                    and connection.in_atomic_block
+                ):
+                    # response with exception (HTTP status like: 401, 404, etc)
+                    # pointwise disable atomic block for handle log (TransactionManagementError)
+                    connection.set_rollback(True)
+                    connection.set_rollback(False)
+                self.handle_log()
             except Exception:
                 # ensure that all exceptions raised by handle_log
                 # doesn't prevent API call to continue as expected
@@ -115,8 +115,12 @@ class BaseLoggingMixin(object):
         method = request.method.lower()
         try:
             attributes = getattr(self, method)
-            view_name = type(attributes.__self__).__module__ + '.' + type(attributes.__self__).__name__
-            return view_name
+            return (
+                type(attributes.__self__).__module__
+                + '.'
+                + type(attributes.__self__).__name__
+            )
+
         except AttributeError:
             return None
 
